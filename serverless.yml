@@ -1,0 +1,22 @@
+org: derjogi
+app: zapier-notion
+service: zapier-notion-api
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.8
+  apiGateway:
+    apiKeys:
+      - name: zapier
+functions:
+  notion:
+    handler: handler.notion
+    events:
+      - http:
+          path: notion
+          method: post
+          private: true
+
+plugins:
+  - serverless-python-requirements
