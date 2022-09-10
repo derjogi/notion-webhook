@@ -1,22 +1,11 @@
 import json
 from datetime import datetime
-
-import requests
 from ZapierToNotion import call_notion_api
+from FetchFromNotion import check_notion_database
+from dotenv import load_dotenv
+load_dotenv()
+import requests
 
-
-def hello(event, context):
-    print(event)
-    result = "Some string"
-    body = {
-        "message": "Go Serverless v3.0! Your function executed successfully!",
-        "input": event,
-        "response": result
-    }
-
-    response = {"statusCode": 200, "body": json.dumps(body)}
-
-    return response
 
 def notion(event, context):
     input_data = {
@@ -28,8 +17,13 @@ def notion(event, context):
         "database": "6abfe101febd4a69bf470c850062013f",
     }
     print(event)
-    body = json.loads(event['body'])
-    print(body)
+    input_data = event['body']
+    print(input_data)
 
-    results = call_notion_api(body)
+    results = call_notion_api(input_data)
+    return {"statusCode": 200, "body": json.dumps(results)}
+
+def check_from_notion(event, context):
+    input_data = event['body']
+    results = check_notion_database(input_data)
     return {"statusCode": 200, "body": json.dumps(results)}
