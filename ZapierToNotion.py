@@ -4,7 +4,7 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()
-input_data={"vimeo_id": "747918504", "vimeo_url": "some_fake_url"}
+input_data={"vimeo_id": "747918504", "vimeo_url": "some_fake_url", "vimeo_title": "Testing stuff - Delete me"}
 from datetime import datetime
 
 token = os.getenv("NOTION_BEARER_TOKEN")
@@ -21,8 +21,9 @@ STATUS_CODE = "status_code"
 def process_new_video(input_data):
     print("Calling with data: \n", input_data)
     database = input_data.get("database", "6abfe101febd4a69bf470c850062013f")  # Defaults to Master Meetings DB
-    project_name = input_data.get("project", "")  # Defaults to an empty project
-    topic_name = input_data.get("topic_name", project_name)
+    vimeo_title = input_data.get("vimeo_title", "No Title")
+    project_name = input_data.get("project", vimeo_title)  # Defaults to an empty project
+    topic_name = input_data.get("topic_name", vimeo_title)
     start_time = input_data.get("start_time", datetime.now().isoformat())
     recording_url = input_data['vimeo_url']
     # Return some error-ish state by default
