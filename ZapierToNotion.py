@@ -4,7 +4,7 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()
-input_data={"vimeo_id": "747918504", "vimeo_url": "some_fake_url", "vimeo_title": "Testing stuff - Delete me"}
+# input_data={"vimeo_id": "747918504", "vimeo_url": "some_fake_url", "vimeo_title": "Testing stuff - Delete me", "topic_title": "Testing Stuff"}
 from datetime import datetime
 
 token = os.getenv("NOTION_BEARER_TOKEN")
@@ -226,7 +226,7 @@ def process_new_video(input_data):
         known_projects.append(project_name)
         search = properties["search"]
         if search.lower() in topic_lowercase:
-            if properties["db"]:
+            if "db" in properties:
                 database = properties["db"]
             response = add_to_db()
             return response
@@ -237,13 +237,13 @@ def process_new_video(input_data):
             }
 
 def get_from_storage_for_zapier(vimeo_id):
-    url = "https://store.zapier.com/api/records?secret=" + os.getenv("ZAPIER_STORAGE_TOKEN")
+    url = "https://store.zapier.com/api/records?key=" + vimeo_id + "&secret=" + os.getenv("ZAPIER_STORAGE_TOKEN")
     response = requests.get(url)
-    entries = response.json()
-    return entries[vimeo_id]
+    return response.json()[vimeo_id]
 
 
 # Functions to call if running locally:
+input_data={"vimeo_id": "750078933", "vimeo_url": "https://vimeo.com/750078933", "vimeo_title": "HFFC: HFFC: Seeds Currency Working Group"}
 
 from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
 print(from_zapier)
