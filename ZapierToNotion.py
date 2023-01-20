@@ -7,16 +7,33 @@ load_dotenv()
 # input_data={"vimeo_id": "747918504", "vimeo_url": "some_fake_url", "vimeo_title": "Testing stuff - Delete me", "topic_title": "Testing Stuff"}
 from datetime import datetime
 
-token = os.getenv("NOTION_BEARER_TOKEN")
+notion_token = os.getenv("NOTION_BEARER_TOKEN")
 headers = {
     "Accept": "application/json",
     "Notion-Version": "2022-06-28",
     "Content-Type": "application/json",
-    "Authorization": "Bearer " + token
+    "Authorization": "Bearer " + notion_token
 }
 ERR = "Error"
 OP_RES = "OPERATION_RESULT"
 STATUS_CODE = "status_code"
+
+# Running this manually sometimes to check the past few meetings are all recorded properly,
+# especially useful if a group was meeting but notion just wasn't set up.
+def sync_videos_from_the_last_x_days(days):
+    # input_data={"vimeo_id": "750078933", "vimeo_url": "https://vimeo.com/750078933", "vimeo_title": "HFFC: HFFC: Seeds Currency Working Group"}
+    zapier_store_url = "https://store.zapier.com/api/records?secret=" + os.getenv("ZAPIER_STORAGE_TOKEN")
+    response = requests.get(zapier_store_url)
+    formatted = response.json()
+    for key in formatted:
+        value = formatted.get(key)
+        video_time = datetime.fromisoformat(value["start_time"]).replace(tzinfo=None)
+        diff = datetime.utcnow() - video_time
+        if diff.days <= days:
+            print("Processing")
+            value["vimeo_title"] = value["topic_name"]
+            value["vimeo_url"] = "https://vimeo.com/" + key
+            process_new_video(value)
 
 def process_new_video(input_data):
     print("Calling with data: \n", input_data)
@@ -59,6 +76,17 @@ def process_new_video(input_data):
             response = requests.patch(url, json=payload, headers=headers)
             return check_request(response, url, payload)
 
+        def update_empty_field(page_id, field, property_value):
+            if not field:
+                print("Field is empty, it can be set")
+
+                set_field_on_page(headers, page_id, property_value)
+                if to_be_returned[OP_RES] != ERR:
+                    to_be_returned[OP_RES] = "OK"
+                    to_be_returned[STATUS_CODE] = 200
+            else:
+                print("Field wasn't empty! Not doing anything.")
+
         def get_page_property(headers, page_id, property):
             url = "https://api.notion.com/v1/pages/" + page_id + "/properties/" + property
             response = requests.get(url, headers=headers)
@@ -74,31 +102,63 @@ def process_new_video(input_data):
             response = requests.post(url, json=payload, headers=headers)
             return check_request(response, url, payload)
 
-        db_response = get_newest_page(database, headers, project_name)
+        def get_last_five_pages_for_project(database, headers, project_name):
+            url = "https://api.notion.com/v1/databases/" + database + "/query"
+            payload = {
+                "filter": {"property": "Project", "select": {"equals": project_name}},
+                "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+                "page_size": 5
+            }
+            response = requests.post(url, json=payload, headers=headers)
+            return check_request(response, url, payload)
+
+        db_response = get_last_five_pages_for_project(database, headers, project_name)
         if to_be_returned[OP_RES] == ERR:
             return to_be_returned
 
         if db_response.json()["results"]:
-            results = db_response.json()["results"][0]
-            print(results)
-            page_id = results["id"]
-            print("page_id: ", page_id)
-            to_be_returned["page_id"] = page_id
+            first_with_empty_date = False
+            counter = 0
+            for page in db_response.json()["results"]:
+                counter += 1
+                print(page)
+                page_id = page["id"]
+                print("page_id: ", page_id)
+                to_be_returned["page_id"] = page_id
 
-            page_properties_response = get_page_property(headers, page_id, "Recording")
-            if to_be_returned[OP_RES] == ERR:
+                page_props = page["properties"]
+                meeting_time = page_props.get("Meeting time", {}).get("date", {})
+                if meeting_time is None:
+                    if counter == 1:
+                        first_with_empty_date = True
+                    continue
+                if meeting_time.get("start") is None:
+                    if counter == 1:
+                        first_with_empty_date = True
+                    continue
+                meeting_time = meeting_time.get("start")
+                planned_meeting_time = datetime.fromisoformat(meeting_time).replace(tzinfo=None)
+                recording_time = datetime.fromisoformat(start_time).replace(tzinfo=None)
+                recording_vs_planned_time_diff = (planned_meeting_time - recording_time).days
+                if not -2 <= recording_vs_planned_time_diff <= 2:
+                    print("Not the right entry, meeting time and recording time are too different: "
+                          + planned_meeting_time.isoformat() + " & " + recording_time.isoformat())
+                    continue
+
+                print("Found a page that matches the recording time, updating that if it's lacking a url.")
+                update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
                 return to_be_returned
 
-            page_property = page_properties_response.json()
-            if not page_property["url"]:
-                print("URL is empty, it can be set")
-                set_field_on_page(headers, page_id, {"Recording": recording_url})
-                if to_be_returned[OP_RES] != ERR:
-                    to_be_returned[OP_RES] = "OK"
-                    to_be_returned[STATUS_CODE] = 200
+            if first_with_empty_date:
+                print("None of the fetched entries matched the time, but the latest one didn't have a date. Assuming this is the right one, let's use that!")
+                page = db_response.json()["results"][0]
+                page_id = page["id"]
+                page_props = page["properties"]
+                update_empty_field(page_id, page_props["Meeting time"]["date"], {"Meeting time": {"date": {"start": start_time}}})
+                update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
                 return to_be_returned
             else:
-                print("URL wasn't empty! Let's create a new page!")
+                print("None of the fetched entries matched the time, so let's create a new page")
         else:
             print("Didn't find any matching entries; this might be the first one. Create it.")
 
@@ -243,16 +303,19 @@ def get_from_storage_for_zapier(vimeo_id):
 
 
 # Functions to call if running locally:
-input_data={"vimeo_id": "750078933", "vimeo_url": "https://vimeo.com/750078933", "vimeo_title": "HFFC: HFFC: Seeds Currency Working Group"}
-
-from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
-print(from_zapier)
-input_data.update(from_zapier)
-# return \
-process_new_video(input_data)
-
-fake_input_data = {
-    "recordingUrl": "https://some/fake/custom/url",
-    "topic_name": "SEEDS | Some new DHO we don't know yet"
-}
+# input_data={"vimeo_id": "750078933", "vimeo_url": "https://vimeo.com/750078933", "vimeo_title": "HFFC: HFFC: Seeds Currency Working Group"}
+#
+# from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
+# print(from_zapier)
+# input_data.update(from_zapier)
+# # return \
+# process_new_video(input_data)
+#
+# fake_input_data = {
+#     "recordingUrl": "https://some/fake/custom/url",
+#     "topic_name": "SEEDS | Some new DHO we don't know yet"
+# }
 # print(process_new_video(fake_input_data))
+
+
+# sync_videos_from_the_last_x_days(10)

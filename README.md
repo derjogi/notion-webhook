@@ -1,3 +1,13 @@
+# Notion Webhook
+
+This project is intended to provide automation of video uploads from Zoom recordings to Vimeo, and from there to link those up in a notion database.
+
+The original idea was to have this running as a separate serverless microservice (thus the description below about how to set up this serverless framework), but we ended up using Zapier instead and putting the code in `ZapierToNotion.py` into a Zapier 'Custom Code' block that gets executed every time a video is found.
+If the code gets updated, it also should be manually updated in Zapier.
+
+To run this script locally, you'll have to create an `.env` file in the root dir with your `NOTION_BEARER_TOKEN` and a `ZAPIER_STORAGE_TOKEN`.
+Check with Jonas or some other devs if you don't know what that is or where to get it from.
+
 <!--
 title: 'AWS Simple HTTP Endpoint example in Python'
 description: 'This template demonstrates how to make a simple HTTP API with Python running on AWS Lambda and API Gateway using the Serverless Framework.'
