@@ -1,28 +1,16 @@
 import os
-
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
-# input_data={"vimeo_id": "747918504", "vimeo_url": "some_fake_url", "vimeo_title": "Testing stuff - Delete me", "topic_title": "Testing Stuff"}
-from datetime import datetime
-
 notion_token = os.getenv("NOTION_BEARER_TOKEN")
-headers = {
-    "Accept": "application/json",
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json",
-    "Authorization": "Bearer " + notion_token
-}
-ERR = "Error"
-OP_RES = "OPERATION_RESULT"
-STATUS_CODE = "status_code"
+zapier_token = os.getenv("ZAPIER_STORAGE_TOKEN")
 
 # Running this manually sometimes to check the past few meetings are all recorded properly,
 # especially useful if a group was meeting but notion just wasn't set up.
 def sync_videos_from_the_last_x_days(days):
     # input_data={"vimeo_id": "750078933", "vimeo_url": "https://vimeo.com/750078933", "vimeo_title": "HFFC: HFFC: Seeds Currency Working Group"}
-    zapier_store_url = "https://store.zapier.com/api/records?secret=" + os.getenv("ZAPIER_STORAGE_TOKEN")
+    zapier_store_url = "https://store.zapier.com/api/records?secret=" + zapier_token
     response = requests.get(zapier_store_url)
     formatted = response.json()
     for key in formatted:
@@ -35,6 +23,21 @@ def sync_videos_from_the_last_x_days(days):
             value["vimeo_url"] = "https://vimeo.com/" + key
             process_new_video(value)
 
+### Everything below here should be copied to zapier; + update the above two tokens!
+
+from datetime import datetime
+import urllib.parse as parse
+
+headers = {
+    "Accept": "application/json",
+    "Notion-Version": "2022-06-28",
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + notion_token
+}
+ERR = "Error"
+OP_RES = "operation_result"
+STATUS_CODE = "status_code"
+
 def process_new_video(input_data):
     print("Calling with data: \n", input_data)
     database = input_data.get("database", "6abfe101febd4a69bf470c850062013f")  # Defaults to Master Meetings DB
@@ -43,11 +46,11 @@ def process_new_video(input_data):
     topic_name = input_data.get("topic_name", vimeo_title)
     start_time = input_data.get("start_time", datetime.now().isoformat())
     recording_url = input_data['vimeo_url']
+    transcript_url = input_data.get("transcript_url", None)
     # Return some error-ish state by default
-    to_be_returned = {STATUS_CODE: 400, OP_RES: "Returned early", "database": database, "project": project_name, "page_id": "Not Found"}
+    to_be_returned = {STATUS_CODE: -1, OP_RES: "Returned early", "database": database, "project": project_name, "page_id": "Not Found"}
 
     ### First  we  define some internal helper functions.
-
     def check_request(response, *params):
         if response.status_code > 299:
             print("Encountered error: " + response.text)
@@ -59,59 +62,6 @@ def process_new_video(input_data):
 
     ### this add_to_db is the most important one.
     def add_to_db():
-
-        # Internal helper API functions. Each will update to_be_returned with 'Error' if something failed.
-
-        def create_new_page(database, headers, properties):
-            url = "https://api.notion.com/v1/pages"
-            payload = {'parent': {'type': 'database_id', 'database_id': database},
-                       'properties': properties
-                       }
-            response = requests.post(url, json=payload, headers=headers)
-            return check_request(response, url, payload)
-
-        def set_field_on_page(headers, page_id, property):
-            url = "https://api.notion.com/v1/pages/" + page_id
-            payload = {"properties": property}
-            response = requests.patch(url, json=payload, headers=headers)
-            return check_request(response, url, payload)
-
-        def update_empty_field(page_id, field, property_value):
-            if not field:
-                print("Field is empty, it can be set")
-
-                set_field_on_page(headers, page_id, property_value)
-                if to_be_returned[OP_RES] != ERR:
-                    to_be_returned[OP_RES] = "OK"
-                    to_be_returned[STATUS_CODE] = 200
-            else:
-                print("Field wasn't empty! Not doing anything.")
-
-        def get_page_property(headers, page_id, property):
-            url = "https://api.notion.com/v1/pages/" + page_id + "/properties/" + property
-            response = requests.get(url, headers=headers)
-            return check_request(response, url)
-
-        def get_newest_page(database, headers, project_name):
-            url = "https://api.notion.com/v1/databases/" + database + "/query"
-            payload = {
-                "filter": {"property": "Project", "select": {"equals": project_name}},
-                "sorts": [{"timestamp": "created_time", "direction": "descending"}],
-                "page_size": 1
-            }
-            response = requests.post(url, json=payload, headers=headers)
-            return check_request(response, url, payload)
-
-        def get_last_five_pages_for_project(database, headers, project_name):
-            url = "https://api.notion.com/v1/databases/" + database + "/query"
-            payload = {
-                "filter": {"property": "Project", "select": {"equals": project_name}},
-                "sorts": [{"timestamp": "created_time", "direction": "descending"}],
-                "page_size": 5
-            }
-            response = requests.post(url, json=payload, headers=headers)
-            return check_request(response, url, payload)
-
         db_response = get_last_five_pages_for_project(database, headers, project_name)
         if to_be_returned[OP_RES] == ERR:
             return to_be_returned
@@ -137,8 +87,8 @@ def process_new_video(input_data):
                         first_with_empty_date = True
                     continue
                 meeting_time = meeting_time.get("start")
-                planned_meeting_time = datetime.fromisoformat(meeting_time).replace(tzinfo=None)
-                recording_time = datetime.fromisoformat(start_time).replace(tzinfo=None)
+                planned_meeting_time = parse_time(meeting_time).replace(tzinfo=None)
+                recording_time = parse_time(start_time).replace(tzinfo=None)
                 recording_vs_planned_time_diff = (planned_meeting_time - recording_time).days
                 if not -2 <= recording_vs_planned_time_diff <= 2:
                     print("Not the right entry, meeting time and recording time are too different: "
@@ -147,6 +97,8 @@ def process_new_video(input_data):
 
                 print("Found a page that matches the recording time, updating that if it's lacking a url.")
                 update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
+                if transcript_url is not None:
+                    update_empty_field(page_id, page_props["Transcript"]["url"], {"Transcript": transcript_url})
                 return to_be_returned
 
             if first_with_empty_date:
@@ -156,6 +108,8 @@ def process_new_video(input_data):
                 page_props = page["properties"]
                 update_empty_field(page_id, page_props["Meeting time"]["date"], {"Meeting time": {"date": {"start": start_time}}})
                 update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
+                if transcript_url is not None:
+                    update_empty_field(page_id, page_props["Transcript"]["url"], {"Transcript": transcript_url})
                 return to_be_returned
             else:
                 print("None of the fetched entries matched the time, so let's create a new page")
@@ -194,43 +148,69 @@ def process_new_video(input_data):
 
     ### End of add_to_db()
 
+    ### Helper functions for add_to_db(). Each will update to_be_returned with 'Error' if something failed.
+    def create_new_page(database, headers, properties):
+        url = "https://api.notion.com/v1/pages"
+        payload = {'parent': {'type': 'database_id', 'database_id': database},
+                   'properties': properties
+                   }
+        response = requests.post(url, json=payload, headers=headers)
+        return check_request(response, url, payload)
+
+    def set_field_on_page(headers, page_id, property):
+        url = "https://api.notion.com/v1/pages/" + page_id
+        payload = {"properties": property}
+        response = requests.patch(url, json=payload, headers=headers)
+        return check_request(response, url, payload)
+
+    def update_empty_field(page_id, field, property_value):
+        if not field:
+            print("Field is empty, it can be set")
+
+            set_field_on_page(headers, page_id, property_value)
+            if to_be_returned[OP_RES] != ERR:
+                to_be_returned[OP_RES] = "OK"
+                to_be_returned[STATUS_CODE] = 200
+        else:
+            print("Field wasn't empty! Not doing anything.")
+
+    def get_page_property(headers, page_id, property):
+        url = "https://api.notion.com/v1/pages/" + page_id + "/properties/" + property
+        response = requests.get(url, headers=headers)
+        return check_request(response, url)
+
+    def get_newest_page(database, headers, project_name):
+        url = "https://api.notion.com/v1/databases/" + database + "/query"
+        payload = {
+            "filter": {"property": "Project", "select": {"equals": project_name}},
+            "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+            "page_size": 1
+        }
+        response = requests.post(url, json=payload, headers=headers)
+        return check_request(response, url, payload)
+
+    def get_last_five_pages_for_project(database, headers, project_name):
+        url = "https://api.notion.com/v1/databases/" + database + "/query"
+        payload = {
+            "filter": {"property": "Project", "select": {"equals": project_name}},
+            "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+            "page_size": 5
+        }
+        response = requests.post(url, json=payload, headers=headers)
+        return check_request(response, url, payload)
+
+    def parse_time(time):
+        try:
+            return datetime.fromisoformat(time)
+        except ValueError:
+            return datetime.strptime(time, "%Y-%m-%dT%H:%M:%S%z")
+
+
+    ### checking what's in the notion db already so we know what to update
     def check_notion_database(database):
         # Return some error-ish state by default
-        to_be_returned[STATUS_CODE] = 400
+        to_be_returned[STATUS_CODE] = -1
         to_be_returned[OP_RES] = "Returned early"
-
-        # Creating some helper functions. Each will update to_be_returned with 'Error' if something failed.
-
-        def query_database(database, headers):
-            url = "https://api.notion.com/v1/databases/" + database + "/query"
-            response = requests.post(url, headers=headers)
-            return check_request(response, url)
-
-        def get_prop(value, props):
-            value_props = props.get(value, {})
-            if "rich_text" in value_props:
-                rich_text = value_props["rich_text"]
-                if rich_text:
-                    return rich_text[0].get("plain_text")
-            elif "title" in value_props:
-                title = value_props["title"]
-                if title:
-                    return title[0].get("plain_text")
-
-        def drop_nones(d: dict) -> dict:
-            """Recursively drop Nones in dict d and return a new dict"""
-            dd = {}
-            for k, v in d.items():
-                if isinstance(v, dict):
-                    dd[k] = drop_nones(v)
-                elif isinstance(v, (list, set, tuple)):
-                    # note: Nones in lists are not dropped
-                    # simply add "if vv is not None" at the end if required
-                    dd[k] = type(v)(drop_nones(vv) if isinstance(vv, dict) else vv
-                                    for vv in v)
-                elif v is not None:
-                    dd[k] = v
-            return dd
 
         db_response = query_database(database, headers)
         if to_be_returned[OP_RES] == ERR:
@@ -260,9 +240,41 @@ def process_new_video(input_data):
         print(res)
         return res
 
+    ### Helper functions for check_notion_database(). Each will update to_be_returned with 'Error' if something failed.
+    def query_database(database, headers):
+        url = "https://api.notion.com/v1/databases/" + database + "/query"
+        response = requests.post(url, headers=headers)
+        return check_request(response, url)
+
+    def get_prop(value, props):
+        value_props = props.get(value, {})
+        if "rich_text" in value_props:
+            rich_text = value_props["rich_text"]
+            if rich_text:
+                return rich_text[0].get("plain_text")
+        elif "title" in value_props:
+            title = value_props["title"]
+            if title:
+                return title[0].get("plain_text")
+
+    def drop_nones(d: dict) -> dict:
+        """Recursively drop Nones in dict d and return a new dict"""
+        dd = {}
+        for k, v in d.items():
+            if isinstance(v, dict):
+                dd[k] = drop_nones(v)
+            elif isinstance(v, (list, set, tuple)):
+                # note: Nones in lists are not dropped
+                # simply add "if vv is not None" at the end if required
+                dd[k] = type(v)(drop_nones(vv) if isinstance(vv, dict) else vv
+                                for vv in v)
+            elif v is not None:
+                dd[k] = v
+        return dd
+
     ### End of Helper methods
 
-    ### Start of main
+    ### Main routine for proccess_new_video:
     # Schema:
     # {
     #   "projects" : [
@@ -297,25 +309,18 @@ def process_new_video(input_data):
             }
 
 def get_from_storage_for_zapier(vimeo_id):
-    url = "https://store.zapier.com/api/records?key=" + vimeo_id + "&secret=" + os.getenv("ZAPIER_STORAGE_TOKEN")
+    encoded = parse.quote_plus(vimeo_id)
+    url = "https://store.zapier.com/api/records?key=" + encoded + "&secret=" + zapier_token
     response = requests.get(url)
     return response.json()[vimeo_id]
 
+# Set fake data if running locally:
+input_data={"vimeo_id": "2qUeU+M2TFaKb6bcToarXQ==", "vimeo_url": "https://vimeo.com/844012221", "vimeo_title": "SEEDS Collaboratory | Governance"}
 
-# Functions to call if running locally:
-# input_data={"vimeo_id": "750078933", "vimeo_url": "https://vimeo.com/750078933", "vimeo_title": "HFFC: HFFC: Seeds Currency Working Group"}
-#
-# from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
-# print(from_zapier)
-# input_data.update(from_zapier)
-# # return \
-# process_new_video(input_data)
-#
-# fake_input_data = {
-#     "recordingUrl": "https://some/fake/custom/url",
-#     "topic_name": "SEEDS | Some new DHO we don't know yet"
-# }
-# print(process_new_video(fake_input_data))
-
+from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
+print(from_zapier)
+input_data.update(from_zapier)
+output = process_new_video(input_data)
 
 # sync_videos_from_the_last_x_days(10)
+print(output)
