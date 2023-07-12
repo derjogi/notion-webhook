@@ -47,6 +47,7 @@ def process_new_video(input_data):
     start_time = input_data.get("start_time", datetime.now().isoformat())
     recording_url = input_data['vimeo_url']
     transcript_url = input_data.get("transcript_url", None)
+    chat_url = input_data.get("chat_url", None)
     # Return some error-ish state by default
     to_be_returned = {STATUS_CODE: -1, OP_RES: "Returned early", "database": database, "project": project_name, "page_id": "Not Found"}
 
@@ -99,6 +100,8 @@ def process_new_video(input_data):
                 update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
                 if transcript_url is not None:
                     update_empty_field(page_id, page_props["Transcript"]["url"], {"Transcript": transcript_url})
+                if chat_url is not None:
+                    update_empty_field(page_id, page_props["Chat"]["url"], {"Chat": chat_url})
                 return to_be_returned
 
             if first_with_empty_date:
@@ -110,6 +113,8 @@ def process_new_video(input_data):
                 update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
                 if transcript_url is not None:
                     update_empty_field(page_id, page_props["Transcript"]["url"], {"Transcript": transcript_url})
+                if chat_url is not None:
+                    update_empty_field(page_id, page_props["Chat"]["url"], {"Chat": chat_url})
                 return to_be_returned
             else:
                 print("None of the fetched entries matched the time, so let's create a new page")
