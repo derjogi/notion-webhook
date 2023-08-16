@@ -45,7 +45,7 @@ def process_new_video(input_data):
     project_name = input_data.get("project", vimeo_title)  # Defaults to an empty project
     topic_name = input_data.get("topic_name", vimeo_title)
     start_time = input_data.get("start_time", datetime.now().isoformat())
-    recording_url = input_data['vimeo_url']
+    recording_url = input_data.get('vimeo_url', "https://vimeo.com/" + input_data['vimeo_id'])
     transcript_url = input_data.get("transcript_url", None)
     chat_url = input_data.get("chat_url", None)
     # Return some error-ish state by default
@@ -91,18 +91,29 @@ def process_new_video(input_data):
                 planned_meeting_time = parse_time(meeting_time).replace(tzinfo=None)
                 recording_time = parse_time(start_time).replace(tzinfo=None)
                 recording_vs_planned_time_diff = (planned_meeting_time - recording_time).days
-                if not -2 <= recording_vs_planned_time_diff <= 2:
+                if not -1 <= recording_vs_planned_time_diff <= 1:
                     print("Not the right entry, meeting time and recording time are too different: "
                           + planned_meeting_time.isoformat() + " & " + recording_time.isoformat())
                     continue
 
-                print("Found a page that matches the recording time, updating that if it's lacking a url.")
-                update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
-                if transcript_url is not None:
-                    update_empty_field(page_id, page_props["Transcript"]["url"], {"Transcript": transcript_url})
-                if chat_url is not None:
-                    update_empty_field(page_id, page_props["Chat"]["url"], {"Chat": chat_url})
-                return to_be_returned
+                try:
+                    meeting_name = page_props["Name"]["title"][0]["text"]["content"]
+                    if meeting_name in topic_name:
+                        print("Found a page that matches the meeting name and recording time, updating that if it's lacking a field.")
+                        update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
+                        if transcript_url is not None:
+                            update_empty_field(page_id, page_props["Transcript"]["url"], {"Transcript": transcript_url})
+                        if chat_url is not None:
+                            update_empty_field(page_id, page_props["Chat"]["url"], {"Chat": chat_url})
+                        return to_be_returned
+                except:
+                    print("Found a page that matches the recording time, updating that if it's lacking a url.")
+                    update_empty_field(page_id, page_props["Recording"]["url"], {"Recording": recording_url})
+                    if transcript_url is not None:
+                        update_empty_field(page_id, page_props["Transcript"]["url"], {"Transcript": transcript_url})
+                    if chat_url is not None:
+                        update_empty_field(page_id, page_props["Chat"]["url"], {"Chat": chat_url})
+                    return to_be_returned
 
             if first_with_empty_date:
                 print("None of the fetched entries matched the time, but the latest one didn't have a date. Assuming this is the right one, let's use that!")
@@ -313,19 +324,40 @@ def process_new_video(input_data):
                                         "  To add it, add a new entry to https://www.notion.so/seeds-explorers/f82fec4581174a53979783b106dab3d0?v=67ce9d0acaf14827b6283ae98c50e906"
             }
 
+def filter_with_id(id, data):
+    if id in data:
+        return data[id]
+
+    values_containing_key = [v for k, v in data.items() if id in v.values()]
+    if len(values_containing_key) > 1:
+        print("Uh oh, somehow found multiple values for " + id + ": ", values_containing_key)
+    if len(values_containing_key) < 1:
+        print("Didn't find an entry for " + id)
+    return values_containing_key[0]
+
 def get_from_storage_for_zapier(vimeo_id):
     encoded = parse.quote_plus(vimeo_id)
     url = "https://store.zapier.com/api/records?key=" + encoded + "&secret=" + zapier_token
-    response = requests.get(url)
-    return response.json()[vimeo_id]
+    try:
+        response = requests.get(url)
+        return response.json()[vimeo_id]
+    except:
+        # get all entries, the ID might be nested inside one of them.
+        url = "https://store.zapier.com/api/records?&secret=" + zapier_token
+        response = requests.get(url)
+        filter_with_id(vimeo_id, response.json())
 
+def run(input_data):
+    output = process_new_video(input_data)
+
+    # sync_videos_from_the_last_x_days(10)
+    print(output)
+
+
+if __name__ == "__main__":
 # Set fake data if running locally:
-input_data={"vimeo_id": "2qUeU+M2TFaKb6bcToarXQ==", "vimeo_url": "https://vimeo.com/844012221", "vimeo_title": "SEEDS Collaboratory | Governance"}
-
-from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
-print(from_zapier)
-input_data.update(from_zapier)
-output = process_new_video(input_data)
-
-# sync_videos_from_the_last_x_days(10)
-print(output)
+    input_data={"vimeo_id": "2qUeU+M2TFaKb6bcToarXQ==", "vimeo_url": "https://vimeo.com/844012221", "vimeo_title": "SEEDS Collaboratory | Governance"}
+    from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
+    print(from_zapier)
+    input_data.update(from_zapier)
+    run(input_data)
