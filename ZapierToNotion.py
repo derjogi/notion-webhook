@@ -52,7 +52,7 @@ def process_new_video(input_data):
     to_be_returned = {STATUS_CODE: -1, OP_RES: "Returned early", "database": database, "project": project_name, "page_id": "Not Found"}
 
     ### First  we  define some internal helper functions.
-    def check_request(response, *params):
+    def check_response(response, *params):
         if response.status_code > 299:
             print("Encountered error: " + response.text)
             print("Request was: ", params)
@@ -171,13 +171,13 @@ def process_new_video(input_data):
                    'properties': properties
                    }
         response = requests.post(url, json=payload, headers=headers)
-        return check_request(response, url, payload)
+        return check_response(response, url, payload)
 
     def set_field_on_page(headers, page_id, property):
         url = "https://api.notion.com/v1/pages/" + page_id
         payload = {"properties": property}
         response = requests.patch(url, json=payload, headers=headers)
-        return check_request(response, url, payload)
+        return check_response(response, url, payload)
 
     def update_empty_field(page_id, field, property_value):
         if not field:
@@ -193,7 +193,7 @@ def process_new_video(input_data):
     def get_page_property(headers, page_id, property):
         url = "https://api.notion.com/v1/pages/" + page_id + "/properties/" + property
         response = requests.get(url, headers=headers)
-        return check_request(response, url)
+        return check_response(response, url)
 
     def get_newest_page(database, headers, project_name):
         url = "https://api.notion.com/v1/databases/" + database + "/query"
@@ -203,7 +203,7 @@ def process_new_video(input_data):
             "page_size": 1
         }
         response = requests.post(url, json=payload, headers=headers)
-        return check_request(response, url, payload)
+        return check_response(response, url, payload)
 
     def get_last_five_pages_for_project(database, headers, project_name):
         url = "https://api.notion.com/v1/databases/" + database + "/query"
@@ -213,7 +213,7 @@ def process_new_video(input_data):
             "page_size": 5
         }
         response = requests.post(url, json=payload, headers=headers)
-        return check_request(response, url, payload)
+        return check_response(response, url, payload)
 
     def parse_time(time):
         try:
@@ -260,7 +260,7 @@ def process_new_video(input_data):
     def query_database(database, headers):
         url = "https://api.notion.com/v1/databases/" + database + "/query"
         response = requests.post(url, headers=headers)
-        return check_request(response, url)
+        return check_response(response, url)
 
     def get_prop(value, props):
         value_props = props.get(value, {})
@@ -304,8 +304,7 @@ def process_new_video(input_data):
 
     zapier_db = "f82fec4581174a53979783b106dab3d0"
     projects_defined_in_notion = check_notion_database(zapier_db)
-    topic_orig = input_data["topic_name"]
-    topic_lowercase = topic_orig.lower()
+    topic_lowercase = topic_name.lower()
     known_projects = []
 
     for project in projects_defined_in_notion["projects"]:
@@ -319,7 +318,7 @@ def process_new_video(input_data):
             response = add_to_db()
             return response
     # If we haven't found a matching project:
-    return {STATUS_CODE: 200, "result": "OK, but ignored. Could not associate video title " + topic_orig +
+    return {STATUS_CODE: 200, "result": "OK, but ignored. Could not associate video title " + topic_name +
                                         ". Known Projects: " + str(known_projects) +
                                         "  To add it, add a new entry to https://www.notion.so/seeds-explorers/f82fec4581174a53979783b106dab3d0?v=67ce9d0acaf14827b6283ae98c50e906"
             }
@@ -330,9 +329,9 @@ def filter_with_id(id, data):
 
     values_containing_key = [v for k, v in data.items() if id in v.values()]
     if len(values_containing_key) > 1:
-        print("Uh oh, somehow found multiple values for " + id + ": ", values_containing_key)
+        raise ValueError("Uh oh, somehow found multiple values for " + id + ": ", values_containing_key)
     if len(values_containing_key) < 1:
-        print("Didn't find an entry for " + id)
+        raise ValueError("Didn't find an entry for " + id)
     return values_containing_key[0]
 
 def get_from_storage_for_zapier(vimeo_id):
@@ -356,7 +355,9 @@ def run(input_data):
 
 if __name__ == "__main__":
 # Set fake data if running locally:
-    input_data={"vimeo_id": "2qUeU+M2TFaKb6bcToarXQ==", "vimeo_url": "https://vimeo.com/844012221", "vimeo_title": "SEEDS Collaboratory | Governance"}
+    input_data={"vimeo_id":	"855059134",
+                "vimeo_url":	"https://vimeo.com/855059134",
+                "vimeo_title":	"SEEDS Collaboratory | Strategic Council"}
     from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
     print(from_zapier)
     input_data.update(from_zapier)
