@@ -344,7 +344,7 @@ def get_from_storage_for_zapier(vimeo_id):
         # get all entries, the ID might be nested inside one of them.
         url = "https://store.zapier.com/api/records?&secret=" + zapier_token
         response = requests.get(url)
-        filter_with_id(vimeo_id, response.json())
+        return filter_with_id(vimeo_id, response.json())
 
 def run(input_data):
     output = process_new_video(input_data)
@@ -355,9 +355,9 @@ def run(input_data):
 
 if __name__ == "__main__":
 # Set fake data if running locally:
-    input_data={"vimeo_id":	"855059134",
-                "vimeo_url":	"https://vimeo.com/855059134",
-                "vimeo_title":	"SEEDS Collaboratory | Strategic Council"}
+    input_data={"vimeo_id":	"857579856",
+                "vimeo_url":	"https://vimeo.com/857579856",
+                "vimeo_title":	"SEEDS Collaboratory | Stewardship Council"}
     from_zapier = get_from_storage_for_zapier(input_data["vimeo_id"])
     print(from_zapier)
     input_data.update(from_zapier)
